@@ -1,6 +1,7 @@
 #include <opencv2/opencv.hpp>
 
 #include "Dataset.hpp"
+#include "MSCKF.hpp"
 #include "Perception.hpp"
 
 #define FEATURES 15
@@ -27,6 +28,8 @@ void undistort(cv::Mat src, cv::Mat &dst) {
 }
 
 int main() {
+    MSCKF msckf(30, 0.01);
+
     Perception *perception = new Dataset("../datasets/dataset-corridor1_512_16");
 
     cv::Mat prevImage;
