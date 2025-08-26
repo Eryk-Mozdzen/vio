@@ -1,5 +1,6 @@
 #include <opencv2/opencv.hpp>
 
+#include "Client.hpp"
 #include "Dataset.hpp"
 #include "MSCKF.hpp"
 #include "Perception.hpp"
@@ -28,6 +29,17 @@ void undistort(cv::Mat src, cv::Mat &dst) {
 }
 
 int main() {
+    Client client;
+    client.write("{\"command\" : \"clear\"}");
+    client.write("{\"command\" : \"config\", \"theme\" : \"dark\", \"camera\" : \"orbit\"}");
+    client.write("{ \
+        \"command\" : \"create\", \
+        \"path\" : \"obj1\", \
+        \"geometry\" : {\"shape\" : \"cuboid\", \"size\" : [ 0.25, 0.25, 0.25 ]}, \
+        \"material\" : {\"color\" : [ 255, 0, 255 ]}, \
+        \"transform\" : {\"translation\" : [ 0, 0, 1 ]} \
+    }");
+
     MSCKF msckf(30, 0.01);
 
     Perception *perception = new Dataset("../datasets/dataset-corridor1_512_16");
@@ -122,12 +134,34 @@ int main() {
 
             prevImage = image.clone();
             prevPoints = points;
+
+            const Eigen::Quaternionf q = msckf.getOrientation();
+            // const Eigen::Vector3f p = msckf.getPosition();
+
+            std::stringstream ss;
+            ss << "{";
+            ss << "\"command\" : \"update\",";
+            ss << "\"path\" : \"obj1\",";
+            ss << "\"transform\" : {";
+            // ss << "\"translation\" : [";
+            // ss << p(0) << ", ";
+            // ss << p(1) << ", ";
+            // ss << p(2) << "],";
+            ss << "\"quaternion\" : [";
+            ss << q.w() << ", ";
+            ss << q.x() << ", ";
+            ss << q.y() << ", ";
+            ss << q.z() << "]";
+            ss << "}";
+            ss << "}";
+            client.write(ss.str());
         }
 
-        /*std::array<float, 6> imu;
+        std::array<float, 6> imu;
         if(perception->getIMU(imu)) {
-            printf("%+10.3f %+10.3f %+10.3f %+10.3f %+10.3f %+10.3f\n", imu[0], imu[1], imu[2],
-                   imu[3], imu[4], imu[5]);
-        }*/
+            const Eigen::Vector3f gyro(imu[0], imu[1], imu[2]);
+            const Eigen::Vector3f accel(imu[3], imu[4], imu[5]);
+            msckf.propagate(gyro, accel);
+        }
     }
 }

@@ -16,7 +16,8 @@ public:
     void propagate(const Eigen::Vector3f &gyro, const Eigen::Vector3f &accel);
     void update(const std::vector<std::pair<Eigen::Vector2f, std::vector<int>>> &features);
 
-    const Eigen::VectorXf &get() const;
+    Eigen::Quaternionf getOrientation() const;
+    Eigen::Vector3f getPosition() const;
 };
 
 #endif

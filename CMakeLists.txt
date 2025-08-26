@@ -10,6 +10,7 @@ add_executable(${CMAKE_PROJECT_NAME}
     "src/main.cpp"
     "src/Dataset.cpp"
     "src/MSCKF.cpp"
+    "src/Client.cpp"
 )
 
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
