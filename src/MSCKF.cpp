@@ -1,3 +1,8 @@
+#include <algorithm>
+#include <map>
+#include <set>
+#include <vector>
+
 #include <Eigen/Dense>
 #include <boost/numeric/odeint.hpp>
 
@@ -56,7 +61,7 @@ class PropagationPii {
 
 public:
     PropagationPii(const Eigen::Matrix<float, 15, 15> F, const Eigen::Matrix<float, 15, 12> G)
-        : F{F}, G{G}, Qimu{Eigen::Matrix<float, 12, 12>::Identity() * 0.001f} {
+        : F{F}, G{G}, Qimu{Eigen::Matrix<float, 12, 12>::Identity() * 0.001f} { // you sure ???
     }
 
     void operator()(const Vector<15 * 15> &y, Vector<15 * 15> &dydt, double) const {
@@ -103,7 +108,7 @@ public:
     }
 };
 
-MSCKF::MSCKF(const int cameraPoses, const float imuSamplePeriod)
+MSCKF::MSCKF(const unsigned int cameraPoses, const float imuSamplePeriod)
     : N{cameraPoses}, T{imuSamplePeriod} {
     x.resize(16 + 7 * N);
     x.segment<4>(0) = Eigen::Quaternionf::Identity().coeffs();
@@ -112,7 +117,7 @@ MSCKF::MSCKF(const int cameraPoses, const float imuSamplePeriod)
     x.segment<3>(10) = Eigen::Vector3f::Zero();
     x.segment<3>(13) = Eigen::Vector3f::Zero();
 
-    for(int i = 0; i < N; i++) {
+    for(unsigned int i = 0; i < N; i++) {
         x.segment<4>(16 + (7 * i) + 0) = Eigen::Quaternionf::Identity().coeffs();
         x.segment<3>(16 + (7 * i) + 4) = Eigen::Vector3f::Zero();
     }
@@ -214,6 +219,81 @@ void MSCKF::propagate(const Eigen::Vector3f &gyro, const Eigen::Vector3f &accel)
     P.block(0, 0, 15, 15) = Piik1k;
     P.block(0, 15, 15, 6 * N) = phi * Pickk;
     P.block(15, 0, 6 * N, 15) = Pickk.transpose() * phi.transpose();
+}
+
+void MSCKF::update(const std::vector<int> &ids, const std::vector<Eigen::Vector2f> &points) {
+    const std::set<int> keys(ids.begin(), ids.end());
+    std::erase_if(features,
+                  [&keys](const auto &item) { return keys.find(item.first) == keys.end(); });
+
+    for(unsigned int i = 0; i < ids.size(); i++) {
+        std::vector<Eigen::Vector2f> &vec = features[ids[i]];
+        vec.push_back(points[i]);
+        if(vec.size() > N) {
+            vec.erase(vec.begin(), vec.end() - N);
+        }
+    }
+
+    const Eigen::Quaternionf qig(x.segment<4>(0));
+    const Eigen::Vector3f pig = x.segment<3>(12);
+
+    const Eigen::Quaternionf qci(0, -0.7071068f, 0.7071068f, 0); // you sure ???
+    const Eigen::Vector3f pci(0.05f, -0.07f, -0.05f);            // you sure ???
+
+    const Eigen::Quaternionf qcg = qci * qig;
+    const Eigen::Vector3f pcg = pig + qig.matrix().transpose() * pci;
+
+    for(unsigned int i = 1; i < N; i++) {
+        x.segment<7>((7 * (i - 1)) + 16) = x.segment<7>((7 * i) + 16);
+    }
+
+    x.segment<4>((7 * (N - 1)) + 16 + 0) = qcg.coeffs();
+    x.segment<3>((7 * (N - 1)) + 16 + 4) = pcg;
+
+    const Eigen::Vector3f CTpic = qig.matrix().transpose() * pci;
+    Eigen::MatrixXf J(6, (6 * N) + 15);
+    J.setZero();
+    J.block<3, 3>(0, 0) = qci.matrix();
+    J.block<3, 3>(3, 0) = Eigen::Matrix3f{
+        {0,         -CTpic(2), CTpic(1) },
+        {CTpic(2),  0,         -CTpic(0)},
+        {-CTpic(1), CTpic(0),  0        },
+    };
+    J.block<3, 3>(3, 12).setIdentity();
+
+    Eigen::MatrixXf IJ((7 * N) + 15, (6 * N) + 15);
+    IJ.block(0, 0, (6 * N) + 15, (6 * N) + 15).setIdentity();
+    IJ.block((6 * N) + 15, 0, 6, (6 * N) + 15) = J;
+    const Eigen::MatrixXf PKK = IJ * P * IJ.transpose();
+
+    P.block(0, 0, 15, 15) = PKK.block(0, 0, 15, 15);
+    P.block(15, 0, 6 * N, 15) = PKK.block(15 + 7, 0, 6 * N, 15);
+    P.block(0, 15, 15, 6 * N) = PKK.block(0, 15 + 7, 15, 6 * N);
+    P.block(15, 15, 6 * N, 6 * N) = PKK.block(15 + 7, 15 + 7, 6 * N, 6 * N);
+
+    int d = 0;
+    for(const int &l : keys) {
+        d += (2 * features[l].size() - 3);
+    }
+
+    Eigen::MatrixXf R0(d, d);
+    R0.setIdentity();
+    R0 *= 0.001f; // you sure ???
+
+    /* MEASUREMENT MODEL */
+
+    // Eigen::MatrixXf Th(15 + (6 * N), 15 + (6 * N));
+    // Q1
+    // r0
+
+    const Eigen::MatrixXf Rn = Q1.transpose() * R0 * Q1;
+    const Eigen::MatrixXf rn = Q1.transpose() * r0;
+    const Eigen::MatrixXf K = P * Th.transpose() * ((Th * P * Th.transpose()) + Rn).inverse();
+    Eigen::MatrixXf Ie(15 + (6 * N), 15 + (6 * N));
+    Ie.setIdentity();
+
+    x += (K * rn);
+    P = (Ie - (K * Th)) * P * (Ie - (K * Th)).transpose() + (K * Rn * K.transpose());
 }
 
 Eigen::Quaternionf MSCKF::getOrientation() const {

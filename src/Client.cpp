@@ -7,20 +7,29 @@
 Client::Client() {
     sock = socket(AF_INET, SOCK_STREAM, 0);
 
-    if(sock != -1) {
-        struct sockaddr_in server;
-        server.sin_family = AF_INET;
-        server.sin_port = htons(8080);
-        server.sin_addr.s_addr = inet_addr("127.0.0.1");
+    if(sock == -1) {
+        sock = 0;
+        return;
+    }
 
-        connect(sock, (struct sockaddr *)&server, sizeof(server));
+    struct sockaddr_in server;
+    server.sin_family = AF_INET;
+    server.sin_port = htons(8080);
+    server.sin_addr.s_addr = inet_addr("127.0.0.1");
+
+    if(connect(sock, (struct sockaddr *)&server, sizeof(server)) == -1) {
+        sock = 0;
     }
 }
 
 Client::~Client() {
-    close(sock);
+    if(sock) {
+        close(sock);
+    }
 }
 
 void Client::write(std::string message) {
-    send(sock, message.c_str(), message.size(), 0);
+    if(sock) {
+        send(sock, message.c_str(), message.size(), 0);
+    }
 }

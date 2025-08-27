@@ -135,6 +135,13 @@ int main() {
             prevImage = image.clone();
             prevPoints = points;
 
+            std::vector<Eigen::Vector2f> _points;
+            _points.reserve(points.size());
+            for(const auto &p : points) {
+                _points.emplace_back(p.x, p.y);
+            }
+            msckf.update(ids, _points);
+
             const Eigen::Quaternionf q = msckf.getOrientation();
             // const Eigen::Vector3f p = msckf.getPosition();
 

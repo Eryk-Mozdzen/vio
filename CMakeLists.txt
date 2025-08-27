@@ -18,6 +18,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
 )
 
 target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE
+    -std=c++20
     -O3
     -Wall
     -Wextra

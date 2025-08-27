@@ -1,20 +1,25 @@
 #ifndef MSCKF_HPP
 #define MSCKF_HPP
 
+#include <map>
+#include <vector>
+
 #include <Eigen/Dense>
 
 class MSCKF {
-    const int N;
+    const unsigned int N;
     const float T;
 
     Eigen::VectorXf x;
     Eigen::MatrixXf P;
 
+    std::map<int, std::vector<Eigen::Vector2f>> features;
+
 public:
-    MSCKF(const int cameraPoses, const float imuSamplePeriod);
+    MSCKF(const unsigned int cameraPoses, const float imuSamplePeriod);
 
     void propagate(const Eigen::Vector3f &gyro, const Eigen::Vector3f &accel);
-    void update(const std::vector<std::pair<Eigen::Vector2f, std::vector<int>>> &features);
+    void update(const std::vector<int> &ids, const std::vector<Eigen::Vector2f> &points);
 
     Eigen::Quaternionf getOrientation() const;
     Eigen::Vector3f getPosition() const;
