@@ -2,8 +2,8 @@
 
 #include "Client.hpp"
 #include "Dataset.hpp"
-#include "MSCKF.hpp"
 #include "Perception.hpp"
+#include "msckf.h"
 
 #define FEATURES 15
 
@@ -40,7 +40,7 @@ int main() {
         \"transform\" : {\"translation\" : [ 0, 0, 1 ]} \
     }");
 
-    MSCKF msckf(30, 0.01);
+    msckf_t *msckf = msckf_create();
 
     Perception *perception = new Dataset("../datasets/dataset-corridor1_512_16");
 
@@ -135,15 +135,19 @@ int main() {
             prevImage = image.clone();
             prevPoints = points;
 
-            std::vector<Eigen::Vector2f> _points;
-            _points.reserve(points.size());
-            for(const auto &p : points) {
-                _points.emplace_back(p.x, p.y);
+            unsigned int _id[FEATURES];
+            double _x[FEATURES];
+            double _y[FEATURES];
+            for(int i = 0; i < FEATURES; i++) {
+                _id[i] = ids[i];
+                _x[i] = (points[i].x - (image.size[0] / 2)) / (image.size[0] / 2);
+                _y[i] = (points[i].y - (image.size[1] / 2)) / (image.size[1] / 2);
             }
-            msckf.update(ids, _points);
+            msckf_update(msckf, _id, _x, _y, FEATURES);
 
-            const Eigen::Quaternionf q = msckf.getOrientation();
-            // const Eigen::Vector3f p = msckf.getPosition();
+            double q[4];
+            double p[3];
+            msckf_get(msckf, q, p);
 
             std::stringstream ss;
             ss << "{";
@@ -151,14 +155,14 @@ int main() {
             ss << "\"path\" : \"obj1\",";
             ss << "\"transform\" : {";
             // ss << "\"translation\" : [";
-            // ss << p(0) << ", ";
-            // ss << p(1) << ", ";
-            // ss << p(2) << "],";
+            // ss << p[0] << ", ";
+            // ss << p[1] << ", ";
+            // ss << p[2] << "],";
             ss << "\"quaternion\" : [";
-            ss << q.w() << ", ";
-            ss << q.x() << ", ";
-            ss << q.y() << ", ";
-            ss << q.z() << "]";
+            ss << q[3] << ", ";
+            ss << q[0] << ", ";
+            ss << q[1] << ", ";
+            ss << q[2] << "]";
             ss << "}";
             ss << "}";
             client.write(ss.str());
@@ -166,9 +170,11 @@ int main() {
 
         std::array<float, 6> imu;
         if(perception->getIMU(imu)) {
-            const Eigen::Vector3f gyro(imu[0], imu[1], imu[2]);
-            const Eigen::Vector3f accel(imu[3], imu[4], imu[5]);
-            msckf.propagate(gyro, accel);
+            const double gyro[3] = {imu[0], imu[1], imu[2]};
+            const double accel[3] = {imu[3], imu[4], imu[5]};
+            msckf_propagate(msckf, gyro, accel);
         }
     }
+
+    msckf_destroy(msckf);
 }
