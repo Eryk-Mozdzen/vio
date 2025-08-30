@@ -423,12 +423,38 @@ void msckf_update(msckf_t *msckf,
     gsl_vector_view pcg = gsl_vector_subvector(&cam.vector, 4, 3);
     quaternion_product(&qci.vector, &qig.vector, &qcg.vector);
 
-    double c_data[3 * 3];
-    gsl_matrix_view c = gsl_matrix_view_array(c_data, 3, 3);
-    rotation_matrix(&qig.vector, &c.matrix);
+    double cig_data[3 * 3];
+    gsl_matrix_view cig = gsl_matrix_view_array(cig_data, 3, 3);
+    rotation_matrix(&qig.vector, &cig.matrix);
 
     gsl_vector_memcpy(&pcg.vector, &pig.vector);
-    gsl_blas_dgemv(CblasTrans, 1, &c.matrix, &pci.vector, 1, &pcg.vector);
+    gsl_blas_dgemv(CblasTrans, 1, &cig.matrix, &pci.vector, 1, &pcg.vector);
+
+    double cigtpic_data[3];
+    gsl_matrix *ij = gsl_matrix_alloc(15 + (6 * N), 15 + (6 * N));
+    gsl_matrix_view i = gsl_matrix_submatrix(ij, 0, 0, 15 + (6 * (N - 1)), 15 + (6 * N));
+    gsl_matrix_view j = gsl_matrix_submatrix(ij, 15 + (6 * (N - 1)), 0, 6, 15 + (6 * N));
+    gsl_matrix_view i_imu = gsl_matrix_submatrix(&i.matrix, 0, 0, 15, 15);
+    gsl_matrix_view i_rest = gsl_matrix_submatrix(&i.matrix, 15, 15 + 6, 6 * (N - 1), 6 * (N - 1));
+    gsl_matrix_view j11 = gsl_matrix_submatrix(&j.matrix, 0, 0, 3, 3);
+    gsl_matrix_view j21 = gsl_matrix_submatrix(&j.matrix, 3, 0, 3, 3);
+    gsl_vector_view cigtpic = gsl_vector_view_array(cigtpic_data, 3);
+    gsl_matrix_view j23 = gsl_matrix_submatrix(&j.matrix, 3, 6, 3, 3);
+    gsl_matrix_set_zero(&i.matrix);
+    gsl_matrix_set_identity(&i_imu.matrix);
+    gsl_matrix_set_identity(&i_rest.matrix);
+    gsl_matrix_set_zero(&j.matrix);
+    rotation_matrix(&qci.vector, &j11.matrix);
+    gsl_blas_dgemv(CblasTrans, 1, &cig.matrix, &pci.vector, 0, &cigtpic.vector);
+    cross_matrix(&cigtpic.vector, &j21.matrix);
+    gsl_matrix_set_identity(&j23.matrix);
+
+    gsl_matrix *tmp = gsl_matrix_alloc(15 + (6 * N), 15 + (6 * N));
+    gsl_blas_dgemm(CblasNoTrans, CblasNoTrans, 1, ij, msckf->P, 0, tmp);
+    gsl_blas_dgemm(CblasNoTrans, CblasTrans, 1, tmp, ij, 0, msckf->P);
+    gsl_matrix_free(tmp);
+
+    gsl_matrix_free(ij);
 }
 
 void msckf_get(msckf_t *msckf, double quaternion[4], double position[3]) {
